@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Задания — Auto Sort{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0">Задания</h4>
+    <small class="text-muted">
+        Показано {{ tasks|length }} из {{ total_filtered }}
+        {% if current_status %}(фильтр: {{ current_status }}){% endif %}
+        / всего {{ total_all }}
+    </small>
+</div>
+
+{# Status filter #}
+<div class="mb-3 d-flex flex-wrap gap-2">
+    <a href="/tasks" class="btn btn-sm {% if not current_status and not needs_attention_filter %}btn-dark{% else %}btn-outline-dark{% endif %}">Все</a>
+    {% for s in status_options %}
+    <a href="/tasks?status={{ s | urlencode }}"
+       class="btn btn-sm {% if current_status == s %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        {{ s }}
+    </a>
+    {% endfor %}
+    <a href="/tasks?needs_attention=1"
+       class="btn btn-sm {% if needs_attention_filter %}btn-warning{% else %}btn-outline-warning{% endif %}">
+        ⚠️ Требует внимания
+    </a>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th>
+                    <th>Артикул</th>
+                    <th>Менеджер</th>
+                    <th>Откуда → Куда</th>
+                    <th class="text-end">Кол-во</th>
+                    <th>Статус</th>
+                    <th>Выполнено</th>
+                    <th>Дедлайн</th>
+                    <th>Коментарий</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tasks %}
+                <tr {% if t.needs_attention %}class="table-warning"{% endif %}>
+                    <td class="text-muted small">
+                        {% if t.needs_attention %}<span title="Требует реакции">⚠️</span>{% endif %}
+                        {{ t.row_number }}
+                    </td>
+                    <td>
+                        <span class="text-truncate d-inline-block" style="max-width:140px" title="{{ t.article }}">
+                            {{ t.article }}
+                        </span>
+                    </td>
+                    <td>{{ t.responsible or "—" }}</td>
+                    <td class="small">
+                        <span class="text-truncate d-inline-block" style="max-width:200px"
+                              title="{{ t.warehouse_src }} → {{ t.warehouse_dst }}">
+                            {{ t.warehouse_src }} → {{ t.warehouse_dst }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ t.quantity or "—" }}</td>
+                    <td>
+                        {% if t.status == "Выполнен ботом" %}
+                            <span class="badge bg-success">{{ t.status }}</span>
+                        {% elif t.status == "В очереди бота" %}
+                            <span class="badge bg-info text-dark">{{ t.status }}</span>
+                        {% elif t.status == "Создан" %}
+                            <span class="badge bg-primary">{{ t.status }}</span>
+                        {% elif t.status == "Отменен по дедлайну" %}
+                            <span class="badge bg-secondary">{{ t.status }}</span>
+                        {% elif t.status == "Выполнен вручную" %}
+                            <span class="badge bg-warning text-dark">{{ t.status }}</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark border">{{ t.status or "—" }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="small text-muted">
+                        {{ t.date_done.strftime("%d.%m.%y") if t.date_done else "—" }}
+                    </td>
+                    <td class="small text-muted">
+                        {{ t.deadline.strftime("%d.%m.%y") if t.deadline else "—" }}
+                    </td>
+                    <td class="small">
+                        {% if t.comment %}
+                            <span class="text-truncate d-inline-block" style="max-width:280px"
+                                  title="{{ t.comment }}">{{ t.comment }}</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-4">Нет заданий</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

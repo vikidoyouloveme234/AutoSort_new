@@ -1,0 +1,35 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+
+# Git / IDE
+.git
+.gitignore
+.idea
+.vscode
+.mypy_cache
+.ruff_cache
+.pytest_cache
+
+# Tests & scripts — не нужны в prod-образе
+tests
+scripts
+
+# Docs & project files
+DEPLOY.md
+*.md
+
+# Secrets монтируются томом, не вшиваются в образ
+.env
+.env.*
+secrets
+
+# Docker-артефакты
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+nginx

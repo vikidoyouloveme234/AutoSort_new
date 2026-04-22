@@ -1,0 +1,119 @@
+# Полный прод-стек Auto_sort.
+# Перед первым запуском: заполнить .env и запустить scripts/init-letsencrypt.sh
+# Затем: docker compose up -d
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"    # ротация при 50 МБ
+    max-file: "3"      # храним 3 последних = до 150 МБ на контейнер
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - .env
+    environment:
+      # Переопределяем DATABASE_URL на сервис внутри compose.
+      # В .env оставляем "localhost"-вариант для локальной разработки.
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-auto_sort}:${DB_PASSWORD:-auto_sort}@db:5432/${DB_NAME:-auto_sort}
+    volumes:
+      # Google service account JSON — монтируется, не вшивается в образ
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${DB_USER:-auto_sort}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-auto_sort}
+      POSTGRES_DB: ${DB_NAME:-auto_sort}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    # nginx:alpine автоматически envsubst'ит всё из /etc/nginx/templates
+    # в /etc/nginx/conf.d при старте
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Раз в 12 часов пробуем обновить сертификаты.
+    # Первичная выдача — через scripts/init-letsencrypt.sh.
+    entrypoint: >
+      /bin/sh -c 'trap exit TERM;
+      while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+      sleep 12h & wait $${!}; done;'
+
+  # Бэкапы БД: раз в сутки pg_dump в volume backups, хранит 14 последних
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # user: root — чтобы писать в named volume /backups (иначе postgres-user
+    # не имеет прав на root-owned mount target). Pg_dump по TCP не требует
+    # Unix-юзера postgres — только PGPASSWORD/POSTGRES_USER для DB auth.
+    user: root
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${DB_USER:-auto_sort}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-auto_sort}
+      POSTGRES_DB: ${DB_NAME:-auto_sort}
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c 'trap exit TERM;
+      while :; do
+        STAMP=$$(date +%Y%m%d_%H%M%S);
+        PGPASSWORD=$${POSTGRES_PASSWORD} pg_dump -h db -U $${POSTGRES_USER} $${POSTGRES_DB}
+          | gzip > /backups/backup_$${STAMP}.sql.gz
+        && echo "[backup] saved $${STAMP}"
+        || echo "[backup] FAILED $${STAMP}";
+        ls -1t /backups/*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f;
+        sleep 24h & wait $${!};
+      done;'
+
+volumes:
+  pgdata:
+  certbot_certs:
+  certbot_www:
+  backups:

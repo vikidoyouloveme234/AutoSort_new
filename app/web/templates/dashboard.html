@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Дашборд — Auto Sort{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="mb-0">Дашборд</h4>
+    <div class="d-flex align-items-center gap-3">
+        {# Cookie health indicator #}
+        <div class="d-flex flex-column align-items-end gap-1">
+            {% if cookie_health == "ok" %}
+                <span class="badge bg-success fs-6">🟢 Сессия активна</span>
+            {% elif cookie_health == "expired" %}
+                <span class="badge bg-danger fs-6">🔴 Сессия истекла</span>
+            {% else %}
+                <span class="badge bg-warning text-dark fs-6">🟡 Статус неизвестен</span>
+            {% endif %}
+            <small class="text-{{ cookie_verified_color }}">
+                Подтверждено: {{ cookie_verified_text }}
+            </small>
+        </div>
+        <form method="post" action="/run" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-outline-primary">▶ Запустить обработку</button>
+        </form>
+    </div>
+</div>
+
+{# Bot state — пауза/возобновление + последняя операция #}
+<div class="card mb-4">
+    <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div>
+            {% if bot_enabled %}
+                {% if last_error_at %}
+                    <span class="badge bg-danger fs-6">🔴 Ошибка</span>
+                    <small class="text-muted ms-2">{{ last_error_at.strftime("%d.%m.%y %H:%M") }}: {{ last_error_text or "" }}</small>
+                    <form method="post" action="/bot/clear-error" class="d-inline ms-1">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button class="btn btn-sm btn-outline-secondary" title="Очистить информацию об ошибке">×</button>
+                    </form>
+                {% elif last_success_at %}
+                    <span class="badge bg-success fs-6">🟢 Работает</span>
+                    <small class="text-muted ms-2">
+                        Последняя обработка: {{ last_success_at.strftime("%d.%m.%y %H:%M") }}
+                        {% if last_success_processed %} (обработано {{ last_success_processed }}){% endif %}
+                    </small>
+                {% else %}
+                    <span class="badge bg-info text-dark fs-6">🟡 Ждёт первого запуска</span>
+                {% endif %}
+            {% else %}
+                <span class="badge bg-secondary fs-6">⏸ Остановлен</span>
+                <small class="text-muted ms-2">Автоматические задачи не выполняются</small>
+            {% endif %}
+            <small class="text-muted ms-3">Интервал опроса: {{ poll_interval }} мин</small>
+        </div>
+        <form method="post" action="/bot/toggle" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm {% if bot_enabled %}btn-outline-danger{% else %}btn-success{% endif %}">
+                {% if bot_enabled %}⏸ Остановить{% else %}▶ Запустить{% endif %}
+            </button>
+        </form>
+    </div>
+</div>
+
+{# Attention banner — кликабельная плашка если есть строки с needs_attention #}
+{% if attention_count and attention_count > 0 %}
+<a href="/tasks?needs_attention=1" class="alert alert-warning d-flex align-items-center justify-content-between text-decoration-none mb-4">
+    <span>
+        <strong>⚠️ {{ attention_count }} {% if attention_count == 1 %}строка требует{% else %}строк требуют{% endif %} внимания</strong>
+        — есть ошибки или незаявленные пропуски
+    </span>
+    <span class="text-muted small">смотреть →</span>
+</a>
+{% endif %}
+
+{# Period tabs #}
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link {% if period == 'week' %}active{% endif %}" href="/?period=week">Неделя</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if period == 'month' %}active{% endif %}" href="/?period=month">Месяц</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if period == 'all' %}active{% endif %}" href="/?period=all">Всё время</a>
+    </li>
+</ul>
+
+{# Stats cards #}
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3 col-xl-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-2 fw-bold text-primary">{{ stats.total }}</div>
+                <div class="text-muted small">Заданий</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-2 fw-bold text-success">{{ stats.units }}</div>
+                <div class="text-muted small">Штук перемещено</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-2 fw-bold {% if stats.success_pct >= 80 %}text-success{% elif stats.success_pct >= 50 %}text-warning{% else %}text-danger{% endif %}">
+                    {{ stats.success_pct }}%
+                </div>
+                <div class="text-muted small">% успеха</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-2 fw-bold text-info">{{ stats.in_queue }}</div>
+                <div class="text-muted small">В работе сейчас</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-2 fw-bold text-secondary">{{ stats.cancelled }}</div>
+                <div class="text-muted small">Отменено</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    {# Manager table #}
+    <div class="col-12 col-xl-6">
+        <div class="card">
+            <div class="card-header fw-semibold">По менеджерам</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Менеджер</th>
+                            <th class="text-end">Заданий</th>
+                            <th class="text-end">Штук</th>
+                            <th class="text-end">% успеха</th>
+                            <th class="text-end">В работе</th>
+                            <th class="text-end">Отменено</th>
+                            <th>Топ складов (отгр. / прих.)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for name, m in stats.by_manager.items() %}
+                        <tr>
+                            <td>{{ name }}</td>
+                            <td class="text-end">{{ m.total }}</td>
+                            <td class="text-end">{{ m.units }}</td>
+                            <td class="text-end">{{ m.success_pct }}%</td>
+                            <td class="text-end">{{ m.in_queue }}</td>
+                            <td class="text-end">{{ m.cancelled }}</td>
+                            <td class="small text-muted">
+                                {% set top_src = m.by_src.most_common(2) %}
+                                {% set top_dst = m.by_dst.most_common(2) %}
+                                {% if top_src %}
+                                    {% for name_wh, cnt in top_src %}{{ name_wh }}:{{ cnt }}{% if not loop.last %}, {% endif %}{% endfor %}
+                                {% else %}—{% endif %}
+                                /
+                                {% if top_dst %}
+                                    {% for name_wh, cnt in top_dst %}{{ name_wh }}:{{ cnt }}{% if not loop.last %}, {% endif %}{% endfor %}
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-muted text-center">Нет данных за период</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# Warehouse stats #}
+    <div class="col-12 col-xl-6">
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <div class="card h-100">
+                    <div class="card-header fw-semibold">Топ складов отгрузки</div>
+                    <ul class="list-group list-group-flush">
+                        {% for name, cnt in stats.by_src.most_common(7) %}
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-truncate me-2">{{ name }}</span>
+                            <span class="badge bg-secondary rounded-pill">{{ cnt }}</span>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted">Нет данных</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="card h-100">
+                    <div class="card-header fw-semibold">Топ складов прихода</div>
+                    <ul class="list-group list-group-flush">
+                        {% for name, cnt in stats.by_dst.most_common(7) %}
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-truncate me-2">{{ name }}</span>
+                            <span class="badge bg-secondary rounded-pill">{{ cnt }}</span>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted">Нет данных</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Настройки — Auto Sort{% endblock %}
+{% block content %}
+
+<h4 class="mb-4">Настройки</h4>
+
+<div class="row g-4">
+
+    {# Cookie health #}
+    <div class="col-12 col-md-6">
+        <div class="card">
+            <div class="card-header fw-semibold">Сессия WB</div>
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    {% if cookie_health == "ok" %}
+                        <span class="fs-4">🟢</span>
+                        <div>
+                            <div class="fw-semibold">Активна</div>
+                            {% if cookie_updated %}
+                            <small class="text-muted">Обновлено {{ cookie_updated.strftime("%d.%m.%y %H:%M") }}</small>
+                            {% endif %}
+                        </div>
+                    {% elif cookie_health == "expired" %}
+                        <span class="fs-4">🔴</span>
+                        <div>
+                            <div class="fw-semibold text-danger">Истекла</div>
+                            <small class="text-muted">Обновите куки ниже</small>
+                        </div>
+                    {% else %}
+                        <span class="fs-4">🟡</span>
+                        <div>
+                            <div class="fw-semibold text-warning">Статус неизвестен</div>
+                            <small class="text-muted">Нажмите «Проверить» для обновления</small>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted">Подтверждено:</small>
+                    <span class="badge bg-{{ cookie_verified_color }} ms-1">{{ cookie_verified_text }}</span>
+                    {% if cookie_verified_at %}
+                        <small class="text-muted ms-1">({{ cookie_verified_at.strftime("%d.%m.%y %H:%M") }})</small>
+                    {% endif %}
+                </div>
+                <form method="post" action="/settings/check-cookie">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="btn btn-sm btn-outline-secondary">Проверить сессию</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Manual run #}
+    <div class="col-12 col-md-6">
+        <div class="card">
+            <div class="card-header fw-semibold">Ручной запуск</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Читает таблицу «Задания» и обрабатывает строки со статусом «Создан».
+                    {% if dry_run %}<strong>DRY RUN:</strong> заявки в WB не отправляются.{% endif %}
+                </p>
+                <form method="post" action="/run">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="btn btn-primary">▶ Запустить обработку</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Sessions — revoke all #}
+    <div class="col-12 col-md-6">
+        <div class="card border-danger">
+            <div class="card-header fw-semibold text-danger">Безопасность</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Сбросить все выпущенные cookies админ-панели. Нажать если подозреваешь
+                    утечку, уволился сотрудник или просто хочешь всех вылогинить.
+                    После нажатия — сам окажешься на странице входа.
+                </p>
+                <form method="post" action="/sessions/revoke-all"
+                      onsubmit="return confirm('Сбросить все админ-сессии?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="btn btn-outline-danger btn-sm">Сбросить все сессии</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Interval setting #}
+    <div class="col-12 col-md-6">
+        <div class="card">
+            <div class="card-header fw-semibold">Интервал опроса таблицы</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Как часто бот проверяет таблицу «Задания». Диапазон 1–60 минут.
+                    Сейчас: <strong>{{ poll_interval }} мин</strong>.
+                </p>
+                <form method="post" action="/bot/interval" class="d-flex gap-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="number" name="interval_minutes" min="1" max="60"
+                           value="{{ poll_interval }}" class="form-control" style="max-width:120px">
+                    <button class="btn btn-primary">Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Update cookie form #}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header fw-semibold">Обновить куки WB</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Откройте DevTools → Network на любой странице ЛК продавца,
+                    скопируйте значения заголовков <code>Cookie</code> и <code>authorizev3</code>.
+                </p>
+                <form method="post" action="/settings/cookie">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Cookie header</label>
+                        <textarea name="cookie_str" class="form-control font-monospace" rows="4"
+                                  placeholder="WBTokenV3=...; cfidsw-wb=...; ..." required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">authorizev3</label>
+                        <textarea name="authorizev3" class="form-control font-monospace" rows="3"
+                                  placeholder="eyJhbGci..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-warning">Сохранить куки</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
