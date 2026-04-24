@@ -11,8 +11,11 @@ WB_RATE_LIMIT_RPS = 4           # эмпирически > 4.5 → 429
 WB_RATE_LIMIT_PERIOD_SEC = 1
 
 # --- Retry policy ---
-RETRY_MAX_ATTEMPTS = 3          # по ТЗ
-RETRY_INITIAL_DELAY_SEC = 1.0   # backoff 1→2→4s
+RETRY_MAX_ATTEMPTS = 3          # по ТЗ — для сетевых ошибок (1→2→4s)
+RETRY_INITIAL_DELAY_SEC = 1.0
+RATE_LIMIT_MAX_ATTEMPTS = 4     # для 429 — 4 попытки, backoff 2→4→8→16s (~30s)
+RATE_LIMIT_RETRY_INITIAL_DELAY_SEC = 2.0
+RATE_LIMIT_RETRY_AFTER_CAP_SEC = 30.0  # если сервер просит ждать дольше — отступаем
 
 # --- wb-seller-lk кэш ---
 SELLER_LK_CACHE_TTL_SEC = 240   # токен живёт 5 мин, кэш на 4
@@ -28,6 +31,10 @@ POLL_INTERVAL_MAX = 60
 
 # --- Stocks endpoint ---
 STOCKS_MAX_NM_IDS_PER_REQUEST = 1000   # лимит WB API
+STOCKS_CACHE_TTL_SEC = 120             # in-memory TTL /stocks: 2 мин — чтобы
+                                       # midnight rush с повторяющимися nmID
+                                       # не дёргал WB 50 раз подряд. Baseline
+                                       # может отстать до 2 мин — терпимо.
 
 # --- Stats cache (dashboard) ---
 STATS_CACHE_TTL_SEC = 300       # 5 минут

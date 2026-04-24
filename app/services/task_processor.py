@@ -21,11 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models.task import TaskStatus
 from app.db.models.warehouse import Warehouse
+from app.services.chrt_cache_service import get_cached_chrt_id, upsert_chrt_cache
 from app.services.cookie_service import get_decrypted_credentials, mark_cookie_health
 from app.sheets import parser, reader, writer
+from app.wb_client._stocks_cache import fetch_stocks_lk_cached
 from app.wb_client.auth import invalidate_token_cache
 from app.wb_client.client import OrderRequest, OrderResponse, submit_order
-from app.wb_client.lk_stocks import fetch_quota, fetch_stocks_lk
+from app.wb_client.lk_stocks import fetch_quota
 
 log = structlog.get_logger()
 
@@ -92,23 +94,37 @@ def _skip(row: int, reason: str) -> None:
 
 
 async def _resolve_chrt_and_baseline(
-    task, dst_id: int, cookie_str: str, authorizev3: str,
+    task, dst_id: int, cookie_str: str, authorizev3: str, session: AsyncSession,
 ) -> tuple[int, int] | None:
-    """Через /stocks получает chrt_id (для безразмерного = inStock[0]) и baseline на dst.
+    """Получает chrt_id и baseline на dst.
 
-    Возвращает (chrt_id, baseline_qty) или None, если:
-    - API недоступен (временный сбой — continue в processor)
-    - товара нет ни на одном складе (mark_skipped)
+    Путь:
+    1. In-memory TTL-кэш /stocks (fetch_stocks_lk_cached) — даёт и chrt_id, и baseline.
+    2. Успех → сохраняем chrt_id в БД-кэш (ChrtCache) для будущего fallback.
+    3. Fail (/stocks недоступен) → пробуем БД-кэш с baseline=0 (watcher деградированно).
+    4. И БД-кэш пуст → None (задача остаётся «Создан», next cycle повторит).
     """
-    stocks = await fetch_stocks_lk(task.nm_id, cookie_str, authorizev3)
+    stocks = await fetch_stocks_lk_cached(task.nm_id, cookie_str, authorizev3)
+
     if stocks is None:
+        # API сдох (429 / network после ретраев). Пробуем last-resort БД-кэш.
+        cached_chrt = await get_cached_chrt_id(session, task.nm_id)
+        if cached_chrt is not None:
+            log.warning(
+                "task_stocks_unavailable_using_db_fallback",
+                row=task.row_number, nm_id=task.nm_id, chrt_id=cached_chrt,
+            )
+            return cached_chrt, 0  # baseline=0 → watcher отметит DONE при любом приходе
         log.warning("task_stocks_unavailable", row=task.row_number)
         return None
+
     if not stocks:
         _skip(task.row_number, f"nmID {task.nm_id} нигде нет на остатках")
         return None
+
     chrt_id = next(iter(stocks.values())).chrt_id
     baseline_qty = stocks[dst_id].count if dst_id in stocks else 0
+    await upsert_chrt_cache(session, task.nm_id, chrt_id)
     return chrt_id, baseline_qty
 
 
@@ -222,7 +238,7 @@ async def _process_single_task(
         return "skipped"
     src_id, dst_id = warehouses
 
-    stock_info = await _resolve_chrt_and_baseline(task, dst_id, cookie_str, authorizev3)
+    stock_info = await _resolve_chrt_and_baseline(task, dst_id, cookie_str, authorizev3, session)
     if stock_info is None:
         return "skipped"
     chrt_id, baseline_qty = stock_info
