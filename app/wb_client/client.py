@@ -114,8 +114,13 @@ async def submit_order(
         log.warning("wb_rate_limited")
     elif resp.status_code == 401:
         log.error("wb_unauthorized")
-    elif not resp.is_success:
+    elif resp.status_code >= 500:
+        # 5xx — реальный сбой WB-инфры, эскалируем
         log.error("wb_request_failed", status=resp.status_code)
+    elif not resp.is_success:
+        # 4xx — обычно бизнес-ответы (exceeded-quota, nmError, requestAlreadyInProcess).
+        # Не сбой, а семантический ответ. Деталями займётся task_processor.
+        log.warning("wb_request_failed", status=resp.status_code)
 
     try:
         body = resp.json()
