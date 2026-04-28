@@ -29,8 +29,10 @@ STATIC_HEADERS = {
 }
 
 # Rate limiter — единый инстанс на все WB-запросы (submit + stocks + quota),
-# чтобы суммарно не превышать лимит 4 req/s (реально WB режет > 4.5).
-# Пересоздаётся при смене event loop (актуально для pytest).
+# чтобы суммарно не превышать реальный лимит WB. Probe 2026-04-28 показал:
+# 1 req/s — без 429, 2 req/s — 10% брака, 3 req/s — 60% брака. Сейчас 2 req/s
+# (cм. WB_RATE_LIMIT_RPS в app/constants.py). Пересоздаётся при смене event
+# loop (актуально для pytest).
 _limiter: AsyncLimiter | None = None
 _limiter_loop: asyncio.AbstractEventLoop | None = None
 

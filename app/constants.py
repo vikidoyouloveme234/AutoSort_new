@@ -7,7 +7,15 @@
 """
 
 # --- WB API rate limit ---
-WB_RATE_LIMIT_RPS = 4           # эмпирически > 4.5 → 429
+# Probe-замер 2026-04-28 на /stocks (scripts/probe_wb_rate_limit.py):
+#   1 req/s → 0% 429
+#   2 req/s → 10% 429
+#   3 req/s → 60% 429
+# Реальный потолок ниже, чем считалось раньше («> 4.5 → 429» оказалось мифом).
+# Ставим 2 — допустимый компромисс: редкие 429 ловит retry-логика в _retry.py
+# (с jitter и Retry-After). На 1 — было бы безопаснее, но 100 заданий тогда
+# обрабатываются ~7 мин против ~3.5 мин на 2 req/s.
+WB_RATE_LIMIT_RPS = 2
 WB_RATE_LIMIT_PERIOD_SEC = 1
 
 # --- Retry policy ---
