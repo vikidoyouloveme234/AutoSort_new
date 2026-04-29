@@ -6,12 +6,17 @@
    app_state.bot_enabled перед запуском: если пауза, skip (кроме ручного запуска).
 2. slot_rush — в 00:00 / 09:00 / 18:00 МСК стартует немедленный опрос.
 3. daily_cookie_check — в 08:00 МСК проверяет живость сессии WB.
-4. daily_delivery_check — в 07:00 МСК проверяет фактический приход товара.
+4. daily_dead_letter_scan — в 07:30 МСК ищет «застрявшие» строки с needs_attention.
 
 Race-condition: в :00 минуты часа poll_tasks (5-min interval) и slot_rush
-(cron) могут сработать одновременно → параллельный process_once с риском
-IntegrityError на task_deliveries. Плюс ручной запуск из UI не должен накладываться
-на scheduled. Общая защита — `run_lock.try_acquire()`.
+(cron) могут сработать одновременно — общая защита `run_lock.try_acquire()`.
+
+ИСТОРИЯ: daily_delivery_check (отслеживание физического прихода товара через
+/stocks с подсчётом delta = current - baseline) отключён 2026-04-28 по просьбе
+заказчика — не нужно тратить запросы на отслеживание доставки, статус
+«Выполнен ботом» теперь означает «отправлено в WB», а не «реально приехало».
+Файл app/services/delivery_watcher.py оставлен как dead code для возможного
+ручного backfill, но не вызывается из шедулера.
 """
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -74,15 +79,6 @@ async def daily_cookie_check() -> None:
     log.info("daily_cookie_check_done", health=health)
 
 
-async def daily_delivery_check() -> None:
-    """07:00 МСК — проверяет приход товара на dst-склады через /stocks."""
-    from app.db.session import AsyncSessionLocal
-    from app.services.delivery_watcher import check_deliveries
-
-    async with AsyncSessionLocal() as session:
-        await check_deliveries(session)
-
-
 async def daily_dead_letter_scan() -> None:
     """07:30 МСК — ищет «забытые» строки с needs_attention, залогировать на видное место.
 
@@ -143,7 +139,6 @@ async def start_scheduler() -> None:
         id="slot_rush", max_instances=1, coalesce=True,
     )
     scheduler.add_job(daily_cookie_check, CronTrigger(hour=8, minute=0), id="daily_cookie_check")
-    scheduler.add_job(daily_delivery_check, CronTrigger(hour=7, minute=0), id="daily_delivery_check")
     scheduler.add_job(daily_dead_letter_scan, CronTrigger(hour=7, minute=30), id="daily_dead_letter_scan")
     scheduler.start()
     log.info("scheduler_started", poll_interval_min=interval)

@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.wb_client._stocks_cache import invalidate_stocks_cache
 from app.wb_client.auth import invalidate_token_cache
 
 
@@ -14,14 +13,6 @@ def _clear_token_cache():
     invalidate_token_cache()
     yield
     invalidate_token_cache()
-
-
-@pytest.fixture(autouse=True)
-def _clear_stocks_cache():
-    """Кэш /stocks — module-level dict. Чистим, иначе cache-hit пропустит mock."""
-    invalidate_stocks_cache()
-    yield
-    invalidate_stocks_cache()
 
 
 @pytest.fixture(autouse=True)

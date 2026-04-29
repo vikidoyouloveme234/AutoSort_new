@@ -12,11 +12,11 @@ async def get_cached_chrt_id(session: AsyncSession, nm_id: int) -> int | None:
 async def upsert_chrt_cache(session: AsyncSession, nm_id: int, chrt_id: int) -> None:
     """Создаёт или обновляет запись, коммитит сразу.
 
-    Коммит здесь (а не у caller'а) принципиален: в task_processor chr_id
-    апсертится ДО submit, но commit происходит только в _record_delivery
-    (после успешного submit). Если все submit падают по квоте — session
-    никогда не коммитится, и ChrtCache остаётся пустой → fallback не
-    сработает. Своим commit фиксируем chrt_id независимо от submit.
+    Коммит здесь (а не у caller'а) принципиален: chrt_id апсертится в
+    task_processor до submit, и нам важно не потерять его, даже если
+    все последующие submit'ы упадут по квоте. Без commit'а на месте
+    ChrtCache остался бы пустым весь цикл, и cache-first путь не работал
+    бы при следующих повторных попытках.
     """
     row = await session.get(ChrtCache, nm_id)
     if row is None:
