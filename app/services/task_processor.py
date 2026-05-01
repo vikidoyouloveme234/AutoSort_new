@@ -293,12 +293,18 @@ async def process_once(session: AsyncSession) -> int:
     cookie_str, authorizev3 = creds
 
     processed = 0
-    for task in tasks:
-        result = await _process_single_task(task, today, cookie_str, authorizev3, session)
-        if result == "submitted":
-            processed += 1
-        elif result == "stop_expired":
-            break
+    try:
+        for task in tasks:
+            result = await _process_single_task(task, today, cookie_str, authorizev3, session)
+            if result == "submitted":
+                processed += 1
+            elif result == "stop_expired":
+                break
+    finally:
+        # Финальный flush буфера Sheets-writer'а: гарантирует что незаписанные
+        # ячейки не повиснут в памяти до следующего цикла. Try/finally — даже
+        # при исключении в loop'е сбрасываем то что уже накопили.
+        writer.flush()
 
     log.info("process_cycle_done", processed=processed)
     return processed

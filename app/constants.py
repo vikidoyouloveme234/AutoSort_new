@@ -41,10 +41,22 @@ POLL_INTERVAL_MAX = 60
 STOCKS_MAX_NM_IDS_PER_REQUEST = 1000   # лимит WB API
 
 # --- Google Sheets API rate limit ---
-# Официальный лимит: 60 read/user/min + 60 write/user/min. Ставим суммарно
-# 60/min (т.е. чтения и записи делят бюджет) — ниже официального, защищает
-# от throttle при пиковых нагрузках (300 строк × 2 write на новые задачи).
-SHEETS_RATE_LIMIT_PER_MIN = 60
+# Официальный лимит per-user: 60 read/min + 60 write/min РАЗДЕЛЬНО (это два
+# независимых пула — https://developers.google.com/sheets/api/limits). Держим
+# два лимитера по 60/min — суммарно 120 операций/мин на сервисный аккаунт.
+SHEETS_READ_LIMIT_PER_MIN = 60
+SHEETS_WRITE_LIMIT_PER_MIN = 60
+
+# --- Sheets retry ---
+SHEETS_MAX_ATTEMPTS = 4
+SHEETS_RETRY_INITIAL_DELAY_SEC = 1.0   # 1→2→4→8s
+
+# --- Sheets batching ---
+# Сколько строк аккумулируем в буфере writer'а перед flush'ем. На batch
+# больше = меньше API-вызовов и лучше throughput, но дольше ждать пока
+# маркер «В очереди бота» появится в таблице. 10 — компромисс: при
+# 1-2 task/sec задержка маркера ~5-10 сек, незаметно для менеджера.
+SHEETS_WRITE_BATCH_ROWS = 10
 
 # --- Stats cache (dashboard) ---
 STATS_CACHE_TTL_SEC = 300       # 5 минут

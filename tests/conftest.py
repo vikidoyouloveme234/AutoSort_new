@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.sheets import writer
+from app.sheets._rate_limit import reset as reset_sheets_limiters
 from app.wb_client.auth import invalidate_token_cache
 
 
@@ -13,6 +15,17 @@ def _clear_token_cache():
     invalidate_token_cache()
     yield
     invalidate_token_cache()
+
+
+@pytest.fixture(autouse=True)
+def _clear_sheets_state():
+    """writer._pending и rate-limiter deques — module-level. Чистим между
+    тестами чтобы не было перекрёстного загрязнения."""
+    writer._pending.clear()
+    reset_sheets_limiters()
+    yield
+    writer._pending.clear()
+    reset_sheets_limiters()
 
 
 @pytest.fixture(autouse=True)
