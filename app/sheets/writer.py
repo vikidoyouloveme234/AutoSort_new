@@ -8,6 +8,7 @@ from datetime import date
 import gspread
 import structlog
 
+from app.sheets import _rate_limit
 from app.sheets.reader import get_sheet
 
 log = structlog.get_logger()
@@ -57,6 +58,7 @@ def update_task_row(
         gspread.Cell(row=r, col=c, value=v)
         for r, c, v in updates
     ]
+    _rate_limit.acquire()
     ws.update_cells(cell_list, value_input_option="RAW")
     log.info("sheet_row_updated", row=row, fields=[c for _, c, _ in updates])
 

@@ -11,9 +11,9 @@
       «В очереди бота» (повторный цикл) — Sheets-write пропускаем,
       обработка продолжается.
    d. Получаем chrtID (из БД-кэша или /stocks при первой встрече nmID)
-   e. Проверяем квоту dst-склада
-   f. Отправляем заявку через wb_client
-   g. На 200 OK → «Выполнен ботом» + дата, на «requestAlreadyInProcess» —
+   e. Отправляем заявку через wb_client (квоту dst НЕ проверяем превентивно —
+      submit вернёт `exceeded-quota` если что, обрабатываем реактивно).
+   f. На 200 OK → «Выполнен ботом» + дата, на «requestAlreadyInProcess» —
       тоже «Выполнен ботом» (заявка уже в WB). На квоте — оставляем IN_QUEUE
       с комментарием, бот повторит. На прочих ошибках — IN_QUEUE +
       needs_attention.
@@ -35,7 +35,7 @@ from app.services.cookie_service import get_decrypted_credentials, mark_cookie_h
 from app.sheets import parser, reader, writer
 from app.wb_client.auth import invalidate_token_cache
 from app.wb_client.client import OrderRequest, OrderResponse, submit_order
-from app.wb_client.lk_stocks import fetch_quota, fetch_stocks_lk
+from app.wb_client.lk_stocks import fetch_stocks_lk
 
 log = structlog.get_logger()
 
@@ -163,24 +163,6 @@ async def _resolve_chrt_id(
     return chrt_id
 
 
-async def _quota_allows(
-    task, dst_id: int, expected_qty: int, cookie_str: str, authorizev3: str,
-) -> bool:
-    """Превентивная проверка квоты dst. Если явно недостаточна — IN_QUEUE с
-    комментарием + False. None от API трактуем как 'возможно' — идём дальше."""
-    quota_dst = await fetch_quota(dst_id, "dst", cookie_str, authorizev3)
-    if quota_dst is not None and quota_dst < expected_qty:
-        log.info("task_dst_quota_insufficient", row=task.row_number,
-                 quota=quota_dst, expected=expected_qty)
-        if not settings.wb_dry_run:
-            writer.update_task_row(
-                task.row_number, needs_attention=False,
-                comment=f"Квота склада-получателя исчерпана (доступно {quota_dst}, нужно {expected_qty}). Повтор в окно квот.",
-            )
-        return False
-    return True
-
-
 async def _handle_submit_response(
     resp: OrderResponse, task, session: AsyncSession,
 ) -> str:
@@ -275,8 +257,10 @@ async def _process_single_task(
         return "skipped"
 
     expected_qty = task.quantity or 1
-    if not await _quota_allows(task, dst_id, expected_qty, cookie_str, authorizev3):
-        return "skipped"
+
+    # NB: pre-check квоты dst (`fetch_quota`) убран 2026-04-28 — submit_order
+    # сам вернёт `exceeded-quota` при недостатке, и `_quota_exceeded_side`
+    # это корректно ловит. Минус 1 запрос на задачу = ~33% throughput.
 
     order = OrderRequest(
         src_warehouse_id=src_id, dst_warehouse_id=dst_id,

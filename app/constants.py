@@ -39,10 +39,12 @@ POLL_INTERVAL_MAX = 60
 
 # --- Stocks endpoint ---
 STOCKS_MAX_NM_IDS_PER_REQUEST = 1000   # лимит WB API
-STOCKS_CACHE_TTL_SEC = 120             # in-memory TTL /stocks: 2 мин — чтобы
-                                       # midnight rush с повторяющимися nmID
-                                       # не дёргал WB 50 раз подряд. Baseline
-                                       # может отстать до 2 мин — терпимо.
+
+# --- Google Sheets API rate limit ---
+# Официальный лимит: 60 read/user/min + 60 write/user/min. Ставим суммарно
+# 60/min (т.е. чтения и записи делят бюджет) — ниже официального, защищает
+# от throttle при пиковых нагрузках (300 строк × 2 write на новые задачи).
+SHEETS_RATE_LIMIT_PER_MIN = 60
 
 # --- Stats cache (dashboard) ---
 STATS_CACHE_TTL_SEC = 300       # 5 минут
