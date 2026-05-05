@@ -168,6 +168,7 @@ async def _handle_submit_response(
 ) -> str:
     """Обрабатывает ответ WB. Возвращает строковый исход:
     - "submitted": 200 OK или requestAlreadyInProcess → DONE_BOT
+    - "rate_limited": 429 после исчерпания retry'я → IN_QUEUE с комментарием
     - "quota": квота исчерпана → IN_QUEUE с комментарием, бот повторит
     - "network": сетевая/circuit/token-fail — Sheets не трогаем, повторим
     - "stop_expired": 401 → выходим из цикла, куки протухли
@@ -191,6 +192,19 @@ async def _handle_submit_response(
     if resp.status_code == 0:
         log.warning("task_network_retry", row=task.row_number)
         return "network"
+
+    if resp.status_code == 429:
+        # WB зарейтлимитил даже после внутренних 4 ретраев в _retry.py.
+        # Это транзиентная проблема (особенно в пиковые окна квот) — НЕ ставим
+        # needs_attention, оставляем IN_QUEUE с пояснением, бот повторит на
+        # следующем цикле естественно.
+        log.warning("task_rate_limited_by_wb", row=task.row_number)
+        if not settings.wb_dry_run:
+            writer.update_task_row(
+                task.row_number, needs_attention=False,
+                comment="WB временно ограничивает запросы (429). Повтор в следующем цикле.",
+            )
+        return "rate_limited"
 
     if _is_already_in_process(resp):
         # Заявка уже в системе WB → с точки зрения «отправлено» она готова.
@@ -229,7 +243,7 @@ async def _process_single_task(
 ) -> str:
     """Полный жизненный цикл одной строки. Возвращает статус-результат.
 
-    Возможные исходы: "skipped"/"cancelled"/"submitted"/"quota"/"network"/"stop_expired"/"failed".
+    Возможные исходы: "skipped"/"cancelled"/"submitted"/"rate_limited"/"quota"/"network"/"stop_expired"/"failed".
     Вызывающий различает только "submitted" (считать в processed) и "stop_expired" (break).
     """
     if _should_skip_by_status(task):

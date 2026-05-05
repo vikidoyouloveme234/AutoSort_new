@@ -102,15 +102,17 @@ async def _do_refresh(cookie_str: str, authorizev3: str) -> str | None:
         "Cookie": cookie_str,
     }
 
+    from app.wb_client._common import get_limiter
     from app.wb_client._retry import retry_network
 
-    async with httpx.AsyncClient() as client:
-        async def _do_post() -> httpx.Response:
-            return await client.post(TOKEN_URL, json=_JSONRPC_BODY, headers=headers, timeout=10)
-        try:
-            resp = await retry_network(_do_post, label="token_refresh")
-        except httpx.RequestError:
-            return None
+    async with get_limiter():
+        async with httpx.AsyncClient() as client:
+            async def _do_post() -> httpx.Response:
+                return await client.post(TOKEN_URL, json=_JSONRPC_BODY, headers=headers, timeout=10)
+            try:
+                resp = await retry_network(_do_post, label="token_refresh")
+            except httpx.RequestError:
+                return None
 
     if resp.status_code == 401:
         log.error("token_refresh_unauthorized")
